@@ -167,7 +167,7 @@
             <tr data-name="${row.name}">
               <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
               <td>${row.name}</td>
-              <td data-order="${row.lowest_price}">${row.lowest_price}</td>
+              <td data-order="${row.lowest_price}">${formatNumber(row.lowest_price)}</td>
               <td>${row.date_checked}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
@@ -178,11 +178,7 @@
         dataTable = $('#itemsTable').DataTable({
           order: [[2, 'asc']],
           columnDefs: [
-            { orderable: false, targets: [0, 4] },
-            {
-              targets: 2,
-              render: $.fn.dataTable.render.number(',', '.', 0)
-            }
+            { orderable: false, targets: [0, 4] }
           ],
           language: {
             search: "搜尋：",
