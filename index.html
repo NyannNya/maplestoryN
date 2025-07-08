@@ -2,23 +2,86 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>商品價格列表</title>
-  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <title>楓之谷N 圖鑑查價</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Google Fonts：思源黑體 -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+
+  <!-- DataTables -->
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+
   <style>
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      margin: 2em;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+
+    h2 {
+      font-weight: 700;
+      margin-bottom: 1em;
+      color: #222;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 1em;
+      font-size: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: white;
+    }
+
     table img {
       width: 50px;
       height: auto;
+      border-radius: 4px;
+    }
+
+    table th, table td {
+      padding: 10px;
+      text-align: center;
+    }
+
+    .dataTables_wrapper .dataTables_filter input {
+      border-radius: 5px;
+      padding: 5px;
+    }
+
+    .dataTables_wrapper .dataTables_length select {
+      border-radius: 5px;
+      padding: 5px;
+    }
+
+    input[type="checkbox"] {
+      transform: scale(1.2);
+    }
+
+    #hideCollected {
+      margin-right: 5px;
+      transform: scale(1.2);
     }
   </style>
 </head>
 <body>
-  <h2>商品價格列表</h2>
+
+  <h2>楓之谷N 圖鑑查價</h2>
+
+  <label>
+    <input type="checkbox" id="hideCollected"> 只顯示未收藏
+  </label>
+
   <table id="itemsTable" class="display">
     <thead>
       <tr>
-        <th>勾選</th>
+        <th>收藏</th>
         <th>名稱</th>
         <th>最低價格</th>
         <th>檢查時間</th>
@@ -29,7 +92,6 @@
   </table>
 
   <script>
-    // 儲存或讀取 localStorage 的勾選狀態
     function loadChecks() {
       return JSON.parse(localStorage.getItem("itemChecks") || "{}");
     }
@@ -39,8 +101,8 @@
     }
 
     const checks = loadChecks();
+    let dataTable;
 
-    // 載入 CSV 檔案
     $.get('all_item_with_prices_daily.csv', function(data) {
       const lines = data.trim().split('\n');
       const headers = lines[0].split(',');
@@ -60,7 +122,7 @@
       rows.forEach(row => {
         const checked = checks[row.name] ? 'checked' : '';
         const $tr = $(`
-          <tr>
+          <tr data-name="${row.name}">
             <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
             <td>${row.name}</td>
             <td>${row.lowest_price}</td>
@@ -71,20 +133,42 @@
         tbody.append($tr);
       });
 
-      // 當勾選變動，儲存到 localStorage
+      dataTable = $('#itemsTable').DataTable({
+        order: [[2, 'asc']],
+        columnDefs: [
+          { orderable: false, targets: [0, 4] }
+        ],
+        language: {
+          search: "搜尋：",
+          lengthMenu: "每頁顯示 _MENU_ 筆資料",
+          info: "顯示第 _START_ 到 _END_ 筆，共 _TOTAL_ 筆",
+          paginate: {
+            previous: "上一頁",
+            next: "下一頁"
+          }
+        }
+      });
+
       $('#itemsTable').on('change', 'input[type="checkbox"]', function() {
         const name = $(this).data('name');
         checks[name] = this.checked;
         saveChecks(checks);
+        applyHideCollected();
       });
 
-      // 啟用 DataTables 排序與搜尋功能
-      $('#itemsTable').DataTable({
-        order: [[2, 'asc']], // 預設用價格排序
-        columnDefs: [
-          { orderable: false, targets: [0, 4] } // 勾選與圖片不參與排序
-        ]
+      $('#hideCollected').on('change', function() {
+        applyHideCollected();
       });
+
+      function applyHideCollected() {
+        const hide = $('#hideCollected').prop('checked');
+        dataTable.rows().every(function() {
+          const row = this.node();
+          const name = $(row).data('name');
+          const isCollected = checks[name];
+          $(row).toggle(!hide || !isCollected);
+        });
+      }
     });
   </script>
 </body>
