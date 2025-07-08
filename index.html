@@ -34,19 +34,18 @@
     }
 
     .controls {
-        margin-bottom: 1.5em;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 2em;
-      }
-      
-      .controls .group {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.5em;
-      }
-      
+      margin-bottom: 1.5em;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2em;
+    }
+
+    .controls .group {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5em;
+    }
 
     input[type="number"] {
       padding: 5px;
@@ -62,7 +61,6 @@
       color: white;
       border-radius: 5px;
       cursor: pointer;
-      margin-left: 5px;
     }
 
     table {
@@ -83,7 +81,7 @@
     }
 
     .result {
-      margin-top: 1em;
+      margin-top: 0.5em;
       font-weight: bold;
     }
   </style>
@@ -97,14 +95,15 @@
       <label><input type="checkbox" id="hideCollected"> 只顯示未收藏</label>
       <button id="reloadBtn">🔄 重新整理資料</button>
     </div>
-  
+
     <div class="group">
       <label>📌 目標分數：</label>
       <input type="number" id="targetScore" placeholder="EX: 3000">
       <button id="calcBtn">計算需要價格</button>
+      <button id="exportBtn">⬇️ 匯出未收藏清單（CSV）</button>
       <div class="result" id="calcResult"></div>
     </div>
-  </div>  
+  </div>
 
   <table id="itemsTable" class="display">
     <thead>
@@ -137,7 +136,9 @@
     }
 
     function loadCSV() {
-      $('#itemsTable').DataTable().destroy();
+      if ($.fn.DataTable.isDataTable('#itemsTable')) {
+        $('#itemsTable').DataTable().destroy();
+      }
       $('#itemsTable tbody').empty();
       checks = loadChecks();
 
@@ -145,7 +146,6 @@
 
       $.get(csvUrl, function(data) {
         const lines = data.trim().split('\n');
-        const headers = lines[0].split(',');
         const rows = lines.slice(1).map(line => {
           const cols = line.split(',');
           return {
@@ -157,7 +157,7 @@
           };
         });
 
-        rowsData = rows; // 儲存起來供計算用
+        rowsData = rows;
 
         const tbody = $('#itemsTable tbody');
 
@@ -167,7 +167,7 @@
             <tr data-name="${row.name}">
               <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
               <td>${row.name}</td>
-              <td>${row.lowest_price}</td>
+              <td data-order="${row.lowest_price}">${row.lowest_price}</td>
               <td>${row.date_checked}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
@@ -238,13 +238,41 @@
       }
 
       const neededItems = Math.ceil(neededScore / 100);
-
-      // 取得未收藏項目並依價格排序
       const uncollected = rowsData.filter(r => !checks[r.name]);
       const cheapest = uncollected.sort((a, b) => a.lowest_price - b.lowest_price).slice(0, neededItems);
       const totalPrice = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
 
-      $('#calcResult').text(`⭐ 尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NX`);
+      $('#calcResult').text(`⭐ 尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
+    });
+
+    $('#exportBtn').on('click', function () {
+      const uncollected = rowsData.filter(r => !checks[r.name]);
+      if (uncollected.length === 0) {
+        alert('已全部收藏，無需匯出');
+        return;
+      }
+
+      const csvContent = [
+        ['名稱', '最低價格', '檢查時間', '圖片網址']
+      ].concat(
+        uncollected
+          .sort((a, b) => a.lowest_price - b.lowest_price)
+          .map(row => [
+            row.name,
+            row.lowest_price,
+            row.date_checked,
+            row.image_url
+          ])
+      ).map(e => e.join(',')).join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", "未收藏清單.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     });
 
     // 初始載入
