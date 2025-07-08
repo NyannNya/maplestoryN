@@ -5,13 +5,14 @@
   <title>楓之谷N 圖鑑查價</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- Google Fonts：思源黑體 -->
+  <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
 
   <!-- DataTables -->
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
   <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/plug-ins/1.13.6/dataRender/number.js"></script>
 
   <style>
     body {
@@ -28,9 +29,40 @@
     }
 
     label {
-      display: block;
-      margin-bottom: 1em;
       font-size: 1rem;
+      margin-right: 1em;
+    }
+
+    .controls {
+        margin-bottom: 1.5em;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2em;
+      }
+      
+      .controls .group {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5em;
+      }
+      
+
+    input[type="number"] {
+      padding: 5px;
+      border-radius: 5px;
+      width: 100px;
+    }
+
+    button {
+      padding: 6px 12px;
+      font-size: 1rem;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-left: 5px;
     }
 
     table {
@@ -50,23 +82,9 @@
       text-align: center;
     }
 
-    .dataTables_wrapper .dataTables_filter input {
-      border-radius: 5px;
-      padding: 5px;
-    }
-
-    .dataTables_wrapper .dataTables_length select {
-      border-radius: 5px;
-      padding: 5px;
-    }
-
-    input[type="checkbox"] {
-      transform: scale(1.2);
-    }
-
-    #hideCollected {
-      margin-right: 5px;
-      transform: scale(1.2);
+    .result {
+      margin-top: 1em;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -74,9 +92,19 @@
 
   <h2>楓之谷N 圖鑑查價</h2>
 
-  <label>
-    <input type="checkbox" id="hideCollected"> 只顯示未收藏
-  </label>
+  <div class="controls">
+    <div class="group">
+      <label><input type="checkbox" id="hideCollected"> 只顯示未收藏</label>
+      <button id="reloadBtn">🔄 重新整理資料</button>
+    </div>
+  
+    <div class="group">
+      <label>📌 目標分數：</label>
+      <input type="number" id="targetScore" placeholder="EX: 3000">
+      <button id="calcBtn">計算需要價格</button>
+      <div class="result" id="calcResult"></div>
+    </div>
+  </div>  
 
   <table id="itemsTable" class="display">
     <thead>
@@ -100,80 +128,127 @@
       localStorage.setItem("itemChecks", JSON.stringify(checks));
     }
 
-    function formatNumber(num) {
-      return num.toLocaleString('en-US');
+    let checks = loadChecks();
+    let dataTable;
+    let rowsData = [];
+
+    function formatNumber(n) {
+      return n.toLocaleString('en-US');
     }
 
-    const checks = loadChecks();
-    let dataTable;
+    function loadCSV() {
+      $('#itemsTable').DataTable().destroy();
+      $('#itemsTable tbody').empty();
+      checks = loadChecks();
 
-    $.get('all_item_with_prices_daily.csv', function(data) {
-      const lines = data.trim().split('\n');
-      const headers = lines[0].split(',');
-      const rows = lines.slice(1).map(line => {
-        const cols = line.split(',');
-        return {
-          name: cols[0],
-          check: cols[1],
-          lowest_price: parseFloat(cols[2]),
-          date_checked: cols[3],
-          image_url: cols[4]
-        };
-      });
+      const csvUrl = 'all_item_with_prices_daily.csv?v=' + Date.now(); // 防止快取
 
-      const tbody = $('#itemsTable tbody');
-
-      rows.forEach(row => {
-        const checked = checks[row.name] ? 'checked' : '';
-        const $tr = $(`
-          <tr data-name="${row.name}">
-            <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
-            <td>${row.name}</td>
-            <td data-sort="${row.lowest_price}">${formatNumber(row.lowest_price)}</td>
-            <td>${row.date_checked}</td>
-            <td><img src="${row.image_url}" alt="圖片"></td>
-          </tr>
-        `);
-        tbody.append($tr);
-      });
-
-      dataTable = $('#itemsTable').DataTable({
-        order: [[2, 'asc']],
-        columnDefs: [
-          { orderable: false, targets: [0, 4] }
-        ],
-        language: {
-          search: "搜尋：",
-          lengthMenu: "每頁顯示 _MENU_ 筆資料",
-          info: "顯示第 _START_ 到 _END_ 筆，共 _TOTAL_ 筆",
-          paginate: {
-            previous: "上一頁",
-            next: "下一頁"
-          }
-        }
-      });
-
-      $('#itemsTable').on('change', 'input[type="checkbox"]', function() {
-        const name = $(this).data('name');
-        checks[name] = this.checked;
-        saveChecks(checks);
-        applyHideCollected();
-      });
-
-      $('#hideCollected').on('change', function() {
-        applyHideCollected();
-      });
-
-      function applyHideCollected() {
-        const hide = $('#hideCollected').prop('checked');
-        dataTable.rows().every(function() {
-          const row = this.node();
-          const name = $(row).data('name');
-          const isCollected = checks[name];
-          $(row).toggle(!hide || !isCollected);
+      $.get(csvUrl, function(data) {
+        const lines = data.trim().split('\n');
+        const headers = lines[0].split(',');
+        const rows = lines.slice(1).map(line => {
+          const cols = line.split(',');
+          return {
+            name: cols[0],
+            check: cols[1],
+            lowest_price: parseFloat(cols[2]),
+            date_checked: cols[3],
+            image_url: cols[4]
+          };
         });
-      }
+
+        rowsData = rows; // 儲存起來供計算用
+
+        const tbody = $('#itemsTable tbody');
+
+        rows.forEach(row => {
+          const checked = checks[row.name] ? 'checked' : '';
+          const $tr = $(`
+            <tr data-name="${row.name}">
+              <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
+              <td>${row.name}</td>
+              <td>${row.lowest_price}</td>
+              <td>${row.date_checked}</td>
+              <td><img src="${row.image_url}" alt="圖片"></td>
+            </tr>
+          `);
+          tbody.append($tr);
+        });
+
+        dataTable = $('#itemsTable').DataTable({
+          order: [[2, 'asc']],
+          columnDefs: [
+            { orderable: false, targets: [0, 4] },
+            {
+              targets: 2,
+              render: $.fn.dataTable.render.number(',', '.', 0)
+            }
+          ],
+          language: {
+            search: "搜尋：",
+            lengthMenu: "每頁顯示 _MENU_ 筆資料",
+            info: "顯示第 _START_ 到 _END_ 筆，共 _TOTAL_ 筆",
+            paginate: {
+              previous: "上一頁",
+              next: "下一頁"
+            }
+          }
+        });
+
+        $('#itemsTable').on('change', 'input[type="checkbox"]', function() {
+          const name = $(this).data('name');
+          checks[name] = this.checked;
+          saveChecks(checks);
+          applyHideCollected();
+        });
+
+        applyHideCollected();
+      });
+    }
+
+    function applyHideCollected() {
+      const hide = $('#hideCollected').prop('checked');
+      dataTable.rows().every(function() {
+        const row = this.node();
+        const name = $(row).data('name');
+        const isCollected = checks[name];
+        $(row).toggle(!hide || !isCollected);
+      });
+    }
+
+    $('#hideCollected').on('change', applyHideCollected);
+
+    $('#reloadBtn').on('click', function() {
+      loadCSV();
     });
+
+    $('#calcBtn').on('click', function() {
+      const target = parseInt($('#targetScore').val());
+      if (isNaN(target) || target <= 0) {
+        $('#calcResult').text('請輸入有效的目標分數');
+        return;
+      }
+
+      const currentScore = Object.values(checks).filter(v => v).length * 100;
+      const neededScore = target - currentScore;
+
+      if (neededScore <= 0) {
+        $('#calcResult').text(`🎉 已達成目標分數 (${currentScore} 分)`);
+        return;
+      }
+
+      const neededItems = Math.ceil(neededScore / 100);
+
+      // 取得未收藏項目並依價格排序
+      const uncollected = rowsData.filter(r => !checks[r.name]);
+      const cheapest = uncollected.sort((a, b) => a.lowest_price - b.lowest_price).slice(0, neededItems);
+      const totalPrice = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
+
+      $('#calcResult').text(`⭐ 尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NX`);
+    });
+
+    // 初始載入
+    loadCSV();
   </script>
 </body>
 </html>
