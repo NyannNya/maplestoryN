@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
   <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <!-- 數字格式化 renderer（官方外掛） -->
   <script src="https://cdn.datatables.net/plug-ins/1.13.6/dataRender/number.js"></script>
 
   <style>
@@ -79,11 +80,6 @@
       padding: 10px;
       text-align: center;
     }
-
-    .result {
-      margin-top: 0.5em;
-      font-weight: bold;
-    }
   </style>
 </head>
 <body>
@@ -101,7 +97,7 @@
       <input type="number" id="targetScore" placeholder="EX: 3000">
       <button id="calcBtn">計算需要價格</button>
       <button id="exportBtn">⬇️ 匯出未收藏清單（CSV）</button>
-      <div class="result" id="calcResult"></div>
+      <div class="result" id="calcResult" style="font-weight:bold;margin-left:.5em;"></div>
     </div>
   </div>
 
@@ -119,30 +115,34 @@
   </table>
 
   <script>
+    /* === 本地收藏勾選狀態 === */
     function loadChecks() {
       return JSON.parse(localStorage.getItem("itemChecks") || "{}");
     }
-
     function saveChecks(checks) {
       localStorage.setItem("itemChecks", JSON.stringify(checks));
     }
 
     let checks = loadChecks();
     let dataTable;
-    let rowsData = [];
+    let rowsData = [];   // 儲存所有列資料（之後計算、匯出用）
 
+    /* 千分位格式化（給計算結果、匯出用） */
     function formatNumber(n) {
       return n.toLocaleString('en-US');
     }
 
+    /* ===== 讀取 CSV 並建立 DataTable ===== */
     function loadCSV() {
+      // 若已存在舊的 DataTable，需先銷毀
       if ($.fn.DataTable.isDataTable('#itemsTable')) {
         $('#itemsTable').DataTable().destroy();
       }
-      $('#itemsTable tbody').empty();
-      checks = loadChecks();
+      $('#itemsTable tbody').empty();     // 清空表格
+      checks = loadChecks();              // 重新取得收藏狀態
 
-      const csvUrl = 'all_item_with_prices_daily.csv?v=' + Date.now(); // 防止快取
+      // 加上 timestamp 防快取
+      const csvUrl = 'all_item_with_prices_daily.csv?v=' + Date.now();
 
       $.get(csvUrl, function(data) {
         const lines = data.trim().split('\n');
@@ -156,7 +156,6 @@
             image_url: cols[4]
           };
         });
-
         rowsData = rows;
 
         const tbody = $('#itemsTable tbody');
@@ -167,7 +166,8 @@
             <tr data-name="${row.name}">
               <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
               <td>${row.name}</td>
-              <td data-order="${row.lowest_price}">${formatNumber(row.lowest_price)}</td>
+              <!-- 價格直接塞「數值」讓 DataTables 自己排，再用 renderer 顯示千分位 -->
+              <td>${row.lowest_price}</td>
               <td>${row.date_checked}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
@@ -175,22 +175,27 @@
           tbody.append($tr);
         });
 
+        /* === 初始化 DataTable === */
         dataTable = $('#itemsTable').DataTable({
-          order: [[2, 'asc']],
+          order: [[2, 'asc']],  // 預設以價格升冪
           columnDefs: [
-            { orderable: false, targets: [0, 4] }
+            { orderable: false, targets: [0, 4] },   // 不對收藏框、圖片排序
+            {
+              targets: 2,                            // 第 3 欄 = 價格
+              render : $.fn.dataTable.render.number(',', '.', 0), // 顯示千分位
+              className: 'dt-right',                 // 右對齊（可自行拿掉）
+              type: 'num'                            // 當成數字排序
+            }
           ],
           language: {
             search: "搜尋：",
             lengthMenu: "每頁顯示 _MENU_ 筆資料",
             info: "顯示第 _START_ 到 _END_ 筆，共 _TOTAL_ 筆",
-            paginate: {
-              previous: "上一頁",
-              next: "下一頁"
-            }
+            paginate: { previous: "上一頁", next: "下一頁" }
           }
         });
 
+        /* === 監聽收藏勾選 === */
         $('#itemsTable').on('change', 'input[type="checkbox"]', function() {
           const name = $(this).data('name');
           checks[name] = this.checked;
@@ -198,10 +203,12 @@
           applyHideCollected();
         });
 
+        /* 若勾選「只顯示未收藏」則立即套用 */
         applyHideCollected();
       });
     }
 
+    /* 依勾選狀態隱藏已收藏項目 */
     function applyHideCollected() {
       const hide = $('#hideCollected').prop('checked');
       dataTable.rows().every(function() {
@@ -211,12 +218,10 @@
         $(row).toggle(!hide || !isCollected);
       });
     }
-
     $('#hideCollected').on('change', applyHideCollected);
 
-    $('#reloadBtn').on('click', function() {
-      loadCSV();
-    });
+    /* === 按鈕事件 === */
+    $('#reloadBtn').on('click', loadCSV);
 
     $('#calcBtn').on('click', function() {
       const target = parseInt($('#targetScore').val());
@@ -226,17 +231,18 @@
       }
 
       const currentScore = Object.values(checks).filter(v => v).length * 100;
-      const neededScore = target - currentScore;
+      const neededScore  = target - currentScore;
 
       if (neededScore <= 0) {
         $('#calcResult').text(`🎉 已達成目標分數 (${currentScore} 分)`);
         return;
       }
 
-      const neededItems = Math.ceil(neededScore / 100);
-      const uncollected = rowsData.filter(r => !checks[r.name]);
-      const cheapest = uncollected.sort((a, b) => a.lowest_price - b.lowest_price).slice(0, neededItems);
-      const totalPrice = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
+      const neededItems  = Math.ceil(neededScore / 100);
+      const uncollected  = rowsData.filter(r => !checks[r.name]);
+      const cheapest     = uncollected.sort((a, b) => a.lowest_price - b.lowest_price)
+                                      .slice(0, neededItems);
+      const totalPrice   = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
 
       $('#calcResult').text(`⭐ 尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
     });
@@ -263,7 +269,7 @@
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
+      const url  = URL.createObjectURL(blob);
       link.setAttribute("href", url);
       link.setAttribute("download", "未收藏清單.csv");
       document.body.appendChild(link);
@@ -271,7 +277,7 @@
       document.body.removeChild(link);
     });
 
-    // 初始載入
+    /* === 初始載入 === */
     loadCSV();
   </script>
 </body>
