@@ -2,29 +2,32 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>楓之谷N 圖鑑查價</title>
+  <title>楓之谷 N 圖鑑查價</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" href="data:,"> <!-- 防止 favicon.ico 404 -->
+  <link rel="icon" href="data:,"><!-- 避免 favicon 404 -->
+  <!-- 字型 & DataTables -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
   <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
   <script src="https://cdn.datatables.net/plug-ins/1.13.6/dataRender/number.js"></script>
   <style>
-    body { font-family: 'Noto Sans TC', sans-serif; margin: 2em; background-color: #f9f9f9; color: #333; }
-    h2 { font-weight: 700; margin-bottom: 1em; color: #222; }
-    .controls { margin-bottom: 1.5em; display: flex; flex-wrap: wrap; gap: 2em; }
-    .controls .group { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5em; }
-    input[type="number"] { padding: 5px; border-radius: 5px; width: 100px; }
-    button { padding: 6px 12px; font-size: 1rem; border: none; background-color: #007bff; color: white; border-radius: 5px; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; background-color: white; }
-    table img { width: 50px; height: auto; border-radius: 4px; }
-    table th, table td { padding: 10px; text-align: center; }
-    .result { font-weight: bold; }
+    body{font-family:'Noto Sans TC',sans-serif;margin:2em;background:#f9f9f9;color:#333}
+    h2{font-weight:700;margin-bottom:1em;color:#222}
+    .controls{margin-bottom:1.5em;display:flex;flex-wrap:wrap;gap:2em}
+    .controls .group{display:flex;align-items:center;flex-wrap:wrap;gap:.5em}
+    input[type=number]{padding:5px;border-radius:5px;width:100px}
+    button{padding:6px 12px;font-size:1rem;border:none;background:#007bff;color:#fff;border-radius:5px;cursor:pointer}
+    table{width:100%;border-collapse:collapse;background:#fff}
+    table img{width:50px;height:auto;border-radius:4px}
+    table th,table td{padding:10px;text-align:center}
+    .result{font-weight:bold}
   </style>
 </head>
 <body>
-  <h2>楓之谷N 圖鑑查價</h2>
+  <h2>楓之谷 N 圖鑑查價</h2>
+
+  <!-- ===== 功能列 ===== -->
   <div class="controls">
     <div class="group">
       <label><input type="checkbox" id="hideCollected"> 只顯示未收藏</label>
@@ -33,16 +36,17 @@
     </div>
     <div class="group">
       <label>📌 目標分數：</label>
-      <input type="number" id="targetScore" placeholder="">
+      <input type="number" id="targetScore">
       <button id="calcBtn">計算需要價格</button>
       <button id="exportBtn">⬇️ 匯出未收藏清單（CSV）</button>
       <div id="calcResult" class="result" style="margin-left:.5em;"></div>
     </div>
     <div class="group">
-      <div id="scoreLevelInfo" class="result" style="margin-left:0.5em;"></div>
+      <div id="scoreLevelInfo" class="result" style="margin-left:.5em;"></div>
     </div>
   </div>
 
+  <!-- ===== 表格 ===== -->
   <table id="itemsTable" class="display">
     <thead>
       <tr>
@@ -56,128 +60,112 @@
     <tbody></tbody>
   </table>
 
+  <!-- ===== 主程式 ===== -->
   <script>
-    function formatNumber(n) {
-      return n.toLocaleString('en-US');
-    }
-
-    function getLevel(score) {
-      if (score < 100) return 0;
-      if (score <= 7600) {
-        const thresholds = [100, 400, 900, 1600, 2600, 3600, 4600, 5600, 6600, 7600];
-        for (let i = thresholds.length - 1; i >= 0; i--) {
-          if (score >= thresholds[i]) return i + 1;
-        }
+    /* ---------- 工具 ---------- */
+    const DATA_URL = 'items.json';          // ← 靜態 JSON 檔路徑
+    function formatNumber(n){return n.toLocaleString('en-US');}
+    function getLevel(score){
+      if(score<100) return 0;
+      if(score<=7600){
+        const t=[100,400,900,1600,2600,3600,4600,5600,6600,7600];
+        for(let i=t.length-1;i>=0;i--) if(score>=t[i]) return i+1;
         return 1;
       }
-      return 10 + Math.floor((score - 7600) / 1000);
+      return 10+Math.floor((score-7600)/1000);
     }
 
-    function loadChecks() {
-      const raw = JSON.parse(localStorage.getItem("itemChecks") || "{}");
-      for (const name in raw) {
-        if (typeof raw[name] !== 'object') {
-          raw[name] = { collected: !!raw[name], excluded: false };
-        }
+    /* ---------- LocalStorage ---------- */
+    function loadChecks(){
+      const raw=JSON.parse(localStorage.getItem('itemChecks')||'{}');
+      for(const n in raw){
+        if(typeof raw[n]!=='object') raw[n]={collected:!!raw[n],excluded:false};
       }
       return raw;
     }
+    function saveChecks(v){localStorage.setItem('itemChecks',JSON.stringify(v));}
 
-    function saveChecks(checks) {
-      localStorage.setItem("itemChecks", JSON.stringify(checks));
-    }
+    /* ---------- 全域 ---------- */
+    let checks=loadChecks();
+    let dataTable=null;
+    let rowsData=[];
 
-    let checks = loadChecks();
-    let dataTable = null;
-    let rowsData = [];
-
-    function applyHideCollected() {
-      if (dataTable) {
+    /* ---------- 隱藏已收藏 ---------- */
+    function applyHideCollected(){
+      if(dataTable){
         dataTable.draw();
         updateScoreLevelInfo();
       }
     }
 
-    function updateScoreLevelInfo() {
-      let totalScore = 0;
-      for (const name in checks) {
-        const c = checks[name];
-        if (c.collected && !c.excluded) totalScore += 100;
+    /* ---------- 更新分數顯示 ---------- */
+    function updateScoreLevelInfo(){
+      let total=0;
+      for(const n in checks){
+        const c=checks[n];
+        if(c.collected&&!c.excluded) total+=100;
       }
-      const level = getLevel(totalScore);
-      $('#scoreLevelInfo').text(`📘 目前分數：${totalScore}（Lv.${level}）`);
+      $('#scoreLevelInfo').text(`📘 目前分數：${total}（Lv.${getLevel(total)}）`);
     }
 
-    function loadCSV() {
-      if ($.fn.DataTable.isDataTable('#itemsTable')) {
-        $('#itemsTable').DataTable().destroy();
-      }
+    /* ---------- 載入 JSON ---------- */
+    function loadCSV(){
+      if($.fn.DataTable.isDataTable('#itemsTable')) $('#itemsTable').DataTable().destroy();
       $('#itemsTable tbody').empty();
-      checks = loadChecks();
+      checks=loadChecks();
 
-      const proxyUrl = 'https://corsproxy.io/?';
-      const apiUrl = proxyUrl + encodeURIComponent('https://marketplace-core-ll9s.onrender.com/api/marketplace/getList');
+      $.getJSON(DATA_URL,function(data){
+        rowsData=[];
+        const $tbody=$('#itemsTable tbody');
 
-      $.getJSON(apiUrl, function (data) {
-        rowsData = [];
-        const tbody = $('#itemsTable tbody');
+        for(const [name,info] of Object.entries(data)){
+          if(!info||!info.imgUrl) continue;
+          if(!checks[name]) checks[name]={collected:false,excluded:false};
 
-        for (const [name, info] of Object.entries(data)) {
-          if (!info || !info.imgUrl) continue;
-          if (!checks[name]) checks[name] = { collected: false, excluded: false };
-
-          const row = {
-            name: name,
-            lowest_price: parseFloat(info.price),
-            image_url: info.imgUrl
-          };
+          const row={name,lowest_price:+info.price,image_url:info.imgUrl};
           rowsData.push(row);
 
-          const $tr = $(`
+          const $tr=$(`
             <tr data-name="${name}">
-              <td><input type="checkbox" class="collect" data-name="${name}" ${checks[name].collected ? 'checked' : ''}></td>
-              <td><input type="checkbox" class="exclude" data-name="${name}" ${checks[name].excluded ? 'checked' : ''}></td>
+              <td><input type="checkbox" class="collect" data-name="${name}" ${checks[name].collected?'checked':''}></td>
+              <td><input type="checkbox" class="exclude" data-name="${name}" ${checks[name].excluded?'checked':''}></td>
               <td>${name}</td>
-              <td>${row.lowest_price >= 0 ? row.lowest_price : 'N/A'}</td>
+              <td>${row.lowest_price>=0?row.lowest_price:'N/A'}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
           `);
-          tbody.append($tr);
+          $tbody.append($tr);
         }
 
-        dataTable = $('#itemsTable').DataTable({
-          order: [[3, 'asc']],
-          columnDefs: [
-            { orderable: false, targets: [0, 1, 4] },
+        dataTable=$('#itemsTable').DataTable({
+          order:[[3,'asc']],
+          columnDefs:[
+            {orderable:false,targets:[0,1,4]},
             {
-              targets: 3,
-              render: {
-                display: function (data, type, row) {
-                  return row.lowest_price >= 0
-                    ? $.fn.dataTable.render.number(',', '.', 0).display(row.lowest_price)
-                    : 'N/A';
-                },
-                sort: function (data, type, row) {
-                  return row.lowest_price >= 0 ? row.lowest_price : Number.MAX_SAFE_INTEGER;
-                }
+              targets:3,
+              render:{
+                display:(d,t,row)=>row.lowest_price>=0
+                  ? $.fn.dataTable.render.number(',','.','0').display(row.lowest_price)
+                  :'N/A',
+                sort:(d,t,row)=>row.lowest_price>=0?row.lowest_price:Number.MAX_SAFE_INTEGER
               },
-              className: 'dt-right',
-              type: 'num'
+              className:'dt-right',
+              type:'num'
             }
           ],
-          language: {
-            search: "搜尋：",
-            lengthMenu: "每頁顯示 _MENU_ 筆資料",
-            info: "顯示第 _START_ 到 _END_ 筆，共 _TOTAL_ 筆",
-            paginate: { previous: "上一頁", next: "下一頁" }
+          language:{
+            search:"搜尋：",
+            lengthMenu:"每頁顯示 _MENU_ 筆資料",
+            info:"顯示第 _START_ 到 _END_ 筆，共 _TOTAL_ 筆",
+            paginate:{previous:"上一頁",next:"下一頁"}
           }
         });
 
-        $('#itemsTable').on('change', 'input[type="checkbox"]', function () {
-          const name = $(this).data('name');
-          if (!checks[name]) checks[name] = { collected: false, excluded: false };
-          if ($(this).hasClass('collect')) checks[name].collected = this.checked;
-          if ($(this).hasClass('exclude')) checks[name].excluded = this.checked;
+        $('#itemsTable').on('change','input[type="checkbox"]',function(){
+          const name=$(this).data('name');
+          if(!checks[name]) checks[name]={collected:false,excluded:false};
+          if($(this).hasClass('collect')) checks[name].collected=this.checked;
+          if($(this).hasClass('exclude')) checks[name].excluded=this.checked;
           saveChecks(checks);
           applyHideCollected();
         });
@@ -186,79 +174,70 @@
       });
     }
 
-    $('#hideCollected').on('change', applyHideCollected);
-    $('#reloadBtn').on('click', loadCSV);
+    /* ---------- UI 綁定 ---------- */
+    $('#hideCollected').on('change',applyHideCollected);
+    $('#reloadBtn').on('click',loadCSV);
 
-    $('#selectPageBtn').on('click', function () {
-      const currentPageRows = dataTable?.rows({ page: 'current' }).nodes();
-      if (!currentPageRows) return;
-      let changed = false;
-      $(currentPageRows).each(function () {
-        const $checkbox = $(this).find('input.collect');
-        const name = $checkbox.data('name');
-        if (!checks[name]?.collected) {
-          checks[name].collected = true;
-          $checkbox.prop('checked', true);
-          changed = true;
+    $('#selectPageBtn').on('click',function(){
+      const rows=dataTable?.rows({page:'current'}).nodes();
+      if(!rows) return;
+      let changed=false;
+      $(rows).each(function(){
+        const $cb=$(this).find('input.collect');
+        const name=$cb.data('name');
+        if(!checks[name]?.collected){
+          checks[name].collected=true;
+          $cb.prop('checked',true);
+          changed=true;
         }
       });
-      if (changed) {
-        saveChecks(checks);
-        applyHideCollected();
-      } else {
-        alert('當前頁面已全部收藏');
-      }
+      if(changed){saveChecks(checks);applyHideCollected();}
+      else alert('當前頁面已全部收藏');
     });
 
-    $('#calcBtn').on('click', function () {
-      const target = parseInt($('#targetScore').val());
-      if (isNaN(target) || target <= 0) {
-        $('#calcResult').text('請輸入有效的目標分數');
-        return;
+    $('#calcBtn').on('click',function(){
+      const target=parseInt($('#targetScore').val());
+      if(isNaN(target)||target<=0){
+        $('#calcResult').text('請輸入有效的目標分數');return;
       }
 
-      let currentScore = 0;
-      for (const name in checks) {
-        const item = checks[name];
-        if (item.collected && !item.excluded) currentScore += 100;
+      let current=0;
+      for(const n in checks){
+        const c=checks[n];
+        if(c.collected&&!c.excluded) current+=100;
+      }
+      const need=target-current;
+      const targetLevel=getLevel(target);
+
+      if(need<=0){
+        $('#calcResult').text(`🎉 已達成目標分數 Lv.${targetLevel}（${current} 分）`);return;
       }
 
-      const neededScore = target - currentScore;
-      const targetLevel = getLevel(target);
+      const needItems=Math.ceil(need/100);
+      const uncollected=rowsData.filter(r=>!checks[r.name]?.collected&&!checks[r.name]?.excluded);
+      const cheapest=uncollected.sort((a,b)=>a.lowest_price-b.lowest_price).slice(0,needItems);
+      const totalPrice=cheapest.reduce((s,i)=>s+i.lowest_price,0);
 
-      if (neededScore <= 0) {
-        $('#calcResult').text(`🎉 已達成目標分數 Lv.${targetLevel}（${currentScore} 分）`);
-        return;
-      }
-
-      const neededItems = Math.ceil(neededScore / 100);
-      const uncollected = rowsData.filter(r => !checks[r.name]?.collected && !checks[r.name]?.excluded);
-      const cheapest = uncollected.sort((a, b) => a.lowest_price - b.lowest_price).slice(0, neededItems);
-      const totalPrice = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
-
-      $('#calcResult').text(`⭐ 目標 Lv.${targetLevel}，尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
+      $('#calcResult').text(`⭐ 目標 Lv.${targetLevel}，尚需 ${needItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
     });
 
-    $('#exportBtn').on('click', function () {
-      const uncollected = rowsData.filter(r => !checks[r.name]?.collected && !checks[r.name]?.excluded);
-      if (uncollected.length === 0) {
-        alert('已全部收藏或排除，無需匯出');
-        return;
-      }
-      const csvContent = [['名稱', '最低價格', '圖片網址']]
-        .concat(uncollected.map(row => [row.name, row.lowest_price, row.image_url]))
-        .map(e => e.join(',')).join('\n');
+    $('#exportBtn').on('click',function(){
+      const uncollected=rowsData.filter(r=>!checks[r.name]?.collected&&!checks[r.name]?.excluded);
+      if(uncollected.length===0){alert('已全部收藏或排除，無需匯出');return;}
+      const csv=[['名稱','最低價格','圖片網址']]
+        .concat(uncollected.map(r=>[r.name,r.lowest_price,r.image_url]))
+        .map(e=>e.join(',')).join('\n');
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", "未收藏清單.csv");
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+      const link=document.createElement('a');
+      link.href=URL.createObjectURL(blob);
+      link.download='未收藏清單.csv';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     });
 
+    /* ---------- 首次載入 ---------- */
     loadCSV();
   </script>
 </body>
