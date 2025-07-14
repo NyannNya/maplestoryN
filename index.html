@@ -211,7 +211,16 @@
             { orderable: false, targets: [0, 1, 4] },
             {
               targets: 3,
-              render: $.fn.dataTable.render.number(',', '.', 0),
+              render: {
+                display: function (data, type, row) {
+                  return row.lowest_price >= 0
+                    ? $.fn.dataTable.render.number(',', '.', 0).display(row.lowest_price)
+                    : 'N/A';
+                },
+                sort: function (data, type, row) {
+                  return row.lowest_price >= 0 ? row.lowest_price : Number.MAX_SAFE_INTEGER;
+                }
+              },
               className: 'dt-right',
               type: 'num'
             }
