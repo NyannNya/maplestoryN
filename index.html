@@ -70,11 +70,11 @@ let checks=load(), rowsData=[], table=null;
 $.fn.dataTable.ext.search.push((settings,data,idx)=>{
   const hideCollected=$('#hideCollected').prop('checked');
   const hideExcluded =$('#hideExcluded' ).prop('checked');
-  if(!hideCollected&&!hideExcluded) return true;
+  if(!hideCollected && !hideExcluded) return true;
   const name=$(settings.aoData[idx].nTr).data('name');
   const c=checks[name]||{collected:false,excluded:false};
-  if(hideCollected && c.collected && !c.excluded) return false;
-  if(hideExcluded  && c.excluded) return false;
+  if (hideCollected && c.collected) return false;  // 已收藏就隱藏
+  if (hideExcluded  && c.excluded)  return false;  // 被排除就隱藏
   return true;
 });
 
