@@ -4,17 +4,11 @@
   <meta charset="UTF-8">
   <title>楓之谷N 圖鑑查價</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
-
-  <!-- DataTables -->
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
   <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-  <!-- 數字格式化 renderer（官方外掛） -->
   <script src="https://cdn.datatables.net/plug-ins/1.13.6/dataRender/number.js"></script>
-
   <style>
     body {
       font-family: 'Noto Sans TC', sans-serif;
@@ -22,38 +16,32 @@
       background-color: #f9f9f9;
       color: #333;
     }
-
     h2 {
       font-weight: 700;
       margin-bottom: 1em;
       color: #222;
     }
-
     label {
       font-size: 1rem;
       margin-right: 1em;
     }
-
     .controls {
       margin-bottom: 1.5em;
       display: flex;
       flex-wrap: wrap;
       gap: 2em;
     }
-
     .controls .group {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
       gap: 0.5em;
     }
-
     input[type="number"] {
       padding: 5px;
       border-radius: 5px;
       width: 100px;
     }
-
     button {
       padding: 6px 12px;
       font-size: 1rem;
@@ -63,19 +51,16 @@
       border-radius: 5px;
       cursor: pointer;
     }
-
     table {
       width: 100%;
       border-collapse: collapse;
       background-color: white;
     }
-
     table img {
       width: 50px;
       height: auto;
       border-radius: 4px;
     }
-
     table th, table td {
       padding: 10px;
       text-align: center;
@@ -83,18 +68,15 @@
   </style>
 </head>
 <body>
-
   <h2>楓之谷N 圖鑑查價</h2>
-
   <div class="controls">
     <div class="group">
       <label><input type="checkbox" id="hideCollected"> 只顯示未收藏</label>
       <button id="reloadBtn">🔄 重新整理資料</button>
     </div>
-
     <div class="group">
       <label>📌 目標分數：</label>
-      <input type="number" id="targetScore" placeholder="EX: 3000">
+      <input type="number" id="targetScore" placeholder="100">
       <button id="calcBtn">計算需要價格</button>
       <button id="exportBtn">⬇️ 匯出未收藏清單（CSV）</button>
       <div class="result" id="calcResult" style="font-weight:bold;margin-left:.5em;"></div>
@@ -107,7 +89,6 @@
         <th>收藏</th>
         <th>名稱</th>
         <th>最低價格</th>
-        <th>檢查時間</th>
         <th>圖片</th>
       </tr>
     </thead>
@@ -115,7 +96,6 @@
   </table>
 
   <script>
-    /* === 本地收藏勾選狀態 === */
     function loadChecks() {
       return JSON.parse(localStorage.getItem("itemChecks") || "{}");
     }
@@ -125,66 +105,56 @@
 
     let checks = loadChecks();
     let dataTable;
-    let rowsData = [];   // 儲存所有列資料（之後計算、匯出用）
+    let rowsData = [];
 
-    /* 千分位格式化（給計算結果、匯出用） */
     function formatNumber(n) {
       return n.toLocaleString('en-US');
     }
 
-    /* ===== 讀取 CSV 並建立 DataTable ===== */
     function loadCSV() {
-      // 若已存在舊的 DataTable，需先銷毀
       if ($.fn.DataTable.isDataTable('#itemsTable')) {
         $('#itemsTable').DataTable().destroy();
       }
-      $('#itemsTable tbody').empty();     // 清空表格
-      checks = loadChecks();              // 重新取得收藏狀態
+      $('#itemsTable tbody').empty();
+      checks = loadChecks();
 
-      // 加上 timestamp 防快取
-      const csvUrl = 'all_item_with_prices_daily.csv?v=' + Date.now();
-
-      $.get(csvUrl, function(data) {
-        const lines = data.trim().split('\n');
-        const rows = lines.slice(1).map(line => {
-          const cols = line.split(',');
-          return {
-            name: cols[0],
-            check: cols[1],
-            lowest_price: parseFloat(cols[2]),
-            date_checked: cols[3],
-            image_url: cols[4]
-          };
-        });
-        rowsData = rows;
-
+      $.getJSON('https://marketplace-core-ll9s.onrender.com/api/marketplace/getList', function(data) {
+        rowsData = [];
         const tbody = $('#itemsTable tbody');
 
-        rows.forEach(row => {
-          const checked = checks[row.name] ? 'checked' : '';
+        for (const [name, info] of Object.entries(data)) {
+          if (!info || info.price === -1 || !info.imgUrl) continue;
+
+          const row = {
+            name: name,
+            check: checks[name] || false,
+            lowest_price: parseFloat(info.price),
+            image_url: info.imgUrl
+          };
+
+          rowsData.push(row);
+
+          const checked = checks[name] ? 'checked' : '';
           const $tr = $(`
             <tr data-name="${row.name}">
               <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
               <td>${row.name}</td>
-              <!-- 價格直接塞「數值」讓 DataTables 自己排，再用 renderer 顯示千分位 -->
               <td>${row.lowest_price}</td>
-              <td>${row.date_checked}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
           `);
           tbody.append($tr);
-        });
+        }
 
-        /* === 初始化 DataTable === */
         dataTable = $('#itemsTable').DataTable({
-          order: [[2, 'asc']],  // 預設以價格升冪
+          order: [[2, 'asc']],
           columnDefs: [
-            { orderable: false, targets: [0, 4] },   // 不對收藏框、圖片排序
+            { orderable: false, targets: [0, 3] },
             {
-              targets: 2,                            // 第 3 欄 = 價格
-              render : $.fn.dataTable.render.number(',', '.', 0), // 顯示千分位
-              className: 'dt-right',                 // 右對齊（可自行拿掉）
-              type: 'num'                            // 當成數字排序
+              targets: 2,
+              render : $.fn.dataTable.render.number(',', '.', 0),
+              className: 'dt-right',
+              type: 'num'
             }
           ],
           language: {
@@ -195,7 +165,6 @@
           }
         });
 
-        /* === 監聽收藏勾選 === */
         $('#itemsTable').on('change', 'input[type="checkbox"]', function() {
           const name = $(this).data('name');
           checks[name] = this.checked;
@@ -203,12 +172,10 @@
           applyHideCollected();
         });
 
-        /* 若勾選「只顯示未收藏」則立即套用 */
         applyHideCollected();
       });
     }
 
-    /* 依勾選狀態隱藏已收藏項目 */
     function applyHideCollected() {
       const hide = $('#hideCollected').prop('checked');
       dataTable.rows().every(function() {
@@ -220,7 +187,6 @@
     }
     $('#hideCollected').on('change', applyHideCollected);
 
-    /* === 按鈕事件 === */
     $('#reloadBtn').on('click', loadCSV);
 
     $('#calcBtn').on('click', function() {
@@ -255,14 +221,13 @@
       }
 
       const csvContent = [
-        ['名稱', '最低價格', '檢查時間', '圖片網址']
+        ['名稱', '最低價格', '圖片網址']
       ].concat(
         uncollected
           .sort((a, b) => a.lowest_price - b.lowest_price)
           .map(row => [
             row.name,
             row.lowest_price,
-            row.date_checked,
             row.image_url
           ])
       ).map(e => e.join(',')).join('\n');
@@ -277,7 +242,6 @@
       document.body.removeChild(link);
     });
 
-    /* === 初始載入 === */
     loadCSV();
   </script>
 </body>
