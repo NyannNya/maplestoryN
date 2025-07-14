@@ -47,11 +47,7 @@
   <table id="itemsTable" class="display">
     <thead>
       <tr>
-        <th>收藏</th>
-        <th>排除</th>
-        <th>名稱</th>
-        <th>最低價格</th>
-        <th>圖片</th>
+        <th>收藏</th><th>排除</th><th>名稱</th><th>最低價格</th><th>圖片</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -60,79 +56,69 @@
   <!-- ===== 主程式 ===== -->
   <script>
     /* ---------- 基本工具 ---------- */
-    const DATA_URL='item.json';                        // ← JSON 檔路徑
-    function formatNumber(n){return n.toLocaleString('en-US');}
+    const DATA_URL = 'item.json';            // ← 靜態 JSON 路徑
+    const formatNumber = n => n.toLocaleString('en-US');
 
     function getLevel(score){
       if(score<100) return 0;
+      const step=[100,400,900,1600,2600,3600,4600,5600,6600,7600];
       if(score<=7600){
-        const t=[100,400,900,1600,2600,3600,4600,5600,6600,7600];
-        for(let i=t.length-1;i>=0;i--) if(score>=t[i]) return i+1;
+        for(let i=step.length-1;i>=0;i--) if(score>=step[i]) return i+1;
         return 1;
       }
-      return 10+Math.floor((score-7600)/1000);
+      return 10 + Math.floor((score-7600)/1000);
     }
 
     /* ---------- LocalStorage ---------- */
-    function loadChecks(){
-      const raw=JSON.parse(localStorage.getItem('itemChecks')||'{}');
-      for(const n in raw) if(typeof raw[n]!=='object')
-        raw[n]={collected:!!raw[n],excluded:false};
+    const loadChecks = () =>{
+      const raw = JSON.parse(localStorage.getItem('itemChecks')||'{}');
+      for(const k in raw)
+        if(typeof raw[k]!=='object') raw[k]={collected:!!raw[k],excluded:false};
       return raw;
-    }
-    function saveChecks(v){localStorage.setItem('itemChecks',JSON.stringify(v));}
+    };
+    const saveChecks = v => localStorage.setItem('itemChecks',JSON.stringify(v));
 
-    /* ---------- 全域變數 ---------- */
-    let checks=loadChecks();
-    let rowsData=[];
-    let dataTable=null;
+    /* ---------- 全域 ---------- */
+    let checks = loadChecks();
+    let rowsData=[], dataTable=null;
 
     /* ---------- 載入 JSON ---------- */
     function loadCSV(){
       if($.fn.DataTable.isDataTable('#itemsTable')) $('#itemsTable').DataTable().destroy();
       $('#itemsTable tbody').empty();
-      checks=loadChecks();
+      checks = loadChecks();
 
-      $.getJSON(DATA_URL,data=>{
+      $.getJSON(DATA_URL, data=>{
         rowsData=[];
-        const $tbody=$('#itemsTable tbody');
+        const $tbody = $('#itemsTable tbody');
 
         for(const [name,info] of Object.entries(data)){
-          if(!info||!info.imgUrl) continue;
+          if(!info || !info.imgUrl) continue;
           if(!checks[name]) checks[name]={collected:false,excluded:false};
 
-          const price=Number(info.price);              // 可能是 -1
+          const price = Number(info.price);          // -1 代表沒有價格
           rowsData.push({name,lowest_price:price,image_url:info.imgUrl});
 
           $tbody.append(`
             <tr data-name="${name}">
               <td><input type="checkbox" class="collect" data-name="${name}" ${checks[name].collected?'checked':''}></td>
-              <td><input type="checkbox" class="exclude" data-name="${name}" ${checks[name].excluded?'checked':''}></td>
+              <td><input type="checkbox" class="exclude"  data-name="${name}" ${checks[name].excluded?'checked':''}></td>
               <td>${name}</td>
-              <td>${price}</td>
+              <!-- 顯示千分位；data-order 保留數值給 DataTables 排序 -->
+              <td data-order="${price}">
+                ${ price>=0 ? formatNumber(price) : 'N/A' }
+              </td>
               <td><img src="${info.imgUrl}" alt="圖片"></td>
             </tr>
           `);
         }
 
-        /* ---------- 初始化 DataTables ---------- */
-        dataTable=$('#itemsTable').DataTable({
+        /* DataTables */
+        dataTable = $('#itemsTable').DataTable({
           order:[[3,'asc']],
           columnDefs:[
             {orderable:false,targets:[0,1,4]},
-            {
-              targets:3,
-              className:'dt-right',
-              type:'num',
-              render:{
-                /* ① 顯示邏輯：負值 → N/A；其餘 → 千分位，沒小數點 */
-                display:(data)=> (data>=0
-                  ? formatNumber(data)
-                  : 'N/A'),
-                /* ② 排序邏輯：負值給最大值，永遠排在最後 */
-                sort:(data)=> (data>=0 ? data : Number.MAX_SAFE_INTEGER)
-              }
-            }
+            {targets:3,className:'dt-right',type:'num'}
           ],
           language:{
             search:"搜尋：",
@@ -142,12 +128,12 @@
           }
         });
 
-        /* --------- 監聽 Checkbox ---------- */
+        /* Checkbox 監聽 */
         $('#itemsTable').on('change','input[type="checkbox"]',function(){
           const name=$(this).data('name');
           if(!checks[name]) checks[name]={collected:false,excluded:false};
           if($(this).hasClass('collect')) checks[name].collected=this.checked;
-          if($(this).hasClass('exclude'))  checks[name].excluded =this.checked;
+          if($(this).hasClass('exclude')) checks[name].excluded=this.checked;
           saveChecks(checks);
           applyHideCollected();
         });
@@ -166,11 +152,9 @@
     /* ---------- 分數顯示 ---------- */
     function updateScoreLevelInfo(){
       let total=0;
-      for(const n in checks){
-        const c=checks[n];
-        if(c.collected&&!c.excluded) total+=100;
-      }
-      $('#scoreLevelInfo').text(`📘 目前分數：${total}（Lv.${getLevel(total)}）`);
+      for(const k in checks) if(checks[k].collected && !checks[k].excluded) total+=100;
+      $('#scoreLevelInfo')
+        .text(`📘 目前分數：${formatNumber(total)}（Lv.${getLevel(total)}）`);
     }
 
     /* ---------- UI 事件 ---------- */
@@ -200,32 +184,40 @@
         $('#calcResult').text('請輸入有效的目標分數');return;
       }
       let current=0;
-      for(const n in checks){
-        const c=checks[n];
-        if(c.collected&&!c.excluded) current+=100;
-      }
+      for(const k in checks) if(checks[k].collected&&!checks[k].excluded) current+=100;
+
       const need=target-current, targetLv=getLevel(target);
       if(need<=0){
-        $('#calcResult').text(`🎉 已達成目標分數 Lv.${targetLv}（${current} 分）`);return;
+        $('#calcResult').text(`🎉 已達成目標分數 Lv.${targetLv}（${formatNumber(current)} 分）`);return;
       }
+
       const needItems=Math.ceil(need/100);
       const uncollected=rowsData.filter(r=>!checks[r.name]?.collected&&!checks[r.name]?.excluded);
-      /* 價格 -1 視為無限大，排在最後 */
       const cheapest=uncollected.sort((a,b)=>{
         const pa=a.lowest_price>=0?a.lowest_price:Number.MAX_SAFE_INTEGER;
         const pb=b.lowest_price>=0?b.lowest_price:Number.MAX_SAFE_INTEGER;
         return pa-pb;
       }).slice(0,needItems);
       const totalPrice=cheapest.reduce((s,i)=>s+i.lowest_price,0);
-      $('#calcResult').text(`⭐ 目標 Lv.${targetLv}，尚需 ${needItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
+
+      $('#calcResult').text(
+        `⭐ 目標 Lv.${targetLv}，尚需 ${formatNumber(needItems)} 個收藏，` +
+        `共約 ${formatNumber(totalPrice)} NESO`
+      );
     });
 
     $('#exportBtn').on('click',function(){
       const uncollected=rowsData.filter(r=>!checks[r.name]?.collected&&!checks[r.name]?.excluded);
       if(!uncollected.length){alert('已全部收藏或排除，無需匯出');return;}
+
       const csv=[['名稱','最低價格','圖片網址']]
-        .concat(uncollected.map(r=>[r.name,r.lowest_price,r.image_url]))
+        .concat(uncollected.map(r=>[
+          r.name,
+          r.lowest_price>=0 ? formatNumber(r.lowest_price) : 'N/A',
+          r.image_url
+        ]))
         .map(e=>e.join(',')).join('\n');
+
       const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
       const link=document.createElement('a');
       link.href=URL.createObjectURL(blob);
