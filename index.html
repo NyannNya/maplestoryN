@@ -108,6 +108,19 @@
       return n.toLocaleString('en-US');
     }
 
+    // 自定過濾器：根據是否勾選「只顯示未收藏」
+    $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+      const row = dataTable.row(dataIndex).node();
+      const name = $(row).data('name');
+      const hide = $('#hideCollected').prop('checked');
+      const isCollected = checks[name];
+      return !hide || !isCollected;
+    });
+
+    function applyHideCollected() {
+      dataTable.draw(); // 套用過濾
+    }
+
     function loadCSV() {
       if ($.fn.DataTable.isDataTable('#itemsTable')) {
         $('#itemsTable').DataTable().destroy();
@@ -118,7 +131,7 @@
       const proxyUrl = 'https://corsproxy.io/?';
       const apiUrl = 'https://marketplace-core-ll9s.onrender.com/api/marketplace/getList';
 
-      $.getJSON(proxyUrl + encodeURIComponent(apiUrl), function(data) {
+      $.getJSON(proxyUrl + encodeURIComponent(apiUrl), function (data) {
         rowsData = [];
         const tbody = $('#itemsTable tbody');
 
@@ -152,7 +165,7 @@
             { orderable: false, targets: [0, 3] },
             {
               targets: 2,
-              render : $.fn.dataTable.render.number(',', '.', 0),
+              render: $.fn.dataTable.render.number(',', '.', 0),
               className: 'dt-right',
               type: 'num'
             }
@@ -165,24 +178,14 @@
           }
         });
 
-        $('#itemsTable').on('change', 'input[type="checkbox"]', function() {
+        $('#itemsTable').on('change', 'input[type="checkbox"]', function () {
           const name = $(this).data('name');
           checks[name] = this.checked;
           saveChecks(checks);
-          applyHideCollected();
+          applyHideCollected(); // 勾選變動時也要套用
         });
 
         applyHideCollected();
-      });
-    }
-
-    function applyHideCollected() {
-      const hide = $('#hideCollected').prop('checked');
-      dataTable.rows().every(function() {
-        const row = this.node();
-        const name = $(row).data('name');
-        const isCollected = checks[name];
-        $(row).toggle(!hide || !isCollected);
       });
     }
 
@@ -213,7 +216,7 @@
       }
     });
 
-    $('#calcBtn').on('click', function() {
+    $('#calcBtn').on('click', function () {
       const target = parseInt($('#targetScore').val());
       if (isNaN(target) || target <= 0) {
         $('#calcResult').text('請輸入有效的目標分數');
@@ -221,18 +224,17 @@
       }
 
       const currentScore = Object.values(checks).filter(v => v).length * 100;
-      const neededScore  = target - currentScore;
+      const neededScore = target - currentScore;
 
       if (neededScore <= 0) {
         $('#calcResult').text(`🎉 已達成目標分數 (${currentScore} 分)`);
         return;
       }
 
-      const neededItems  = Math.ceil(neededScore / 100);
-      const uncollected  = rowsData.filter(r => !checks[r.name]);
-      const cheapest     = uncollected.sort((a, b) => a.lowest_price - b.lowest_price)
-                                      .slice(0, neededItems);
-      const totalPrice   = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
+      const neededItems = Math.ceil(neededScore / 100);
+      const uncollected = rowsData.filter(r => !checks[r.name]);
+      const cheapest = uncollected.sort((a, b) => a.lowest_price - b.lowest_price).slice(0, neededItems);
+      const totalPrice = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
 
       $('#calcResult').text(`⭐ 尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
     });
@@ -247,18 +249,16 @@
       const csvContent = [
         ['名稱', '最低價格', '圖片網址']
       ].concat(
-        uncollected
-          .sort((a, b) => a.lowest_price - b.lowest_price)
-          .map(row => [
-            row.name,
-            row.lowest_price,
-            row.image_url
-          ])
+        uncollected.sort((a, b) => a.lowest_price - b.lowest_price).map(row => [
+          row.name,
+          row.lowest_price,
+          row.image_url
+        ])
       ).map(e => e.join(',')).join('\n');
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement("a");
-      const url  = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
       link.setAttribute("href", url);
       link.setAttribute("download", "未收藏清單.csv");
       document.body.appendChild(link);
