@@ -4,66 +4,23 @@
   <meta charset="UTF-8">
   <title>楓之谷N 圖鑑查價</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,"> <!-- 防止 favicon.ico 404 -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
   <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
   <script src="https://cdn.datatables.net/plug-ins/1.13.6/dataRender/number.js"></script>
   <style>
-    body {
-      font-family: 'Noto Sans TC', sans-serif;
-      margin: 2em;
-      background-color: #f9f9f9;
-      color: #333;
-    }
-    h2 {
-      font-weight: 700;
-      margin-bottom: 1em;
-      color: #222;
-    }
-    .controls {
-      margin-bottom: 1.5em;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 2em;
-    }
-    .controls .group {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 0.5em;
-    }
-    input[type="number"] {
-      padding: 5px;
-      border-radius: 5px;
-      width: 100px;
-    }
-    button {
-      padding: 6px 12px;
-      font-size: 1rem;
-      border: none;
-      background-color: #007bff;
-      color: white;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background-color: white;
-    }
-    table img {
-      width: 50px;
-      height: auto;
-      border-radius: 4px;
-    }
-    table th, table td {
-      padding: 10px;
-      text-align: center;
-    }
-    .result {
-      font-weight: bold;
-    }
+    body { font-family: 'Noto Sans TC', sans-serif; margin: 2em; background-color: #f9f9f9; color: #333; }
+    h2 { font-weight: 700; margin-bottom: 1em; color: #222; }
+    .controls { margin-bottom: 1.5em; display: flex; flex-wrap: wrap; gap: 2em; }
+    .controls .group { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5em; }
+    input[type="number"] { padding: 5px; border-radius: 5px; width: 100px; }
+    button { padding: 6px 12px; font-size: 1rem; border: none; background-color: #007bff; color: white; border-radius: 5px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; background-color: white; }
+    table img { width: 50px; height: auto; border-radius: 4px; }
+    table th, table td { padding: 10px; text-align: center; }
+    .result { font-weight: bold; }
   </style>
 </head>
 <body>
@@ -76,7 +33,7 @@
     </div>
     <div class="group">
       <label>📌 目標分數：</label>
-      <input type="number" id="targetScore">
+      <input type="number" id="targetScore" placeholder="">
       <button id="calcBtn">計算需要價格</button>
       <button id="exportBtn">⬇️ 匯出未收藏清單（CSV）</button>
       <div id="calcResult" class="result" style="margin-left:.5em;"></div>
@@ -104,17 +61,15 @@
       return n.toLocaleString('en-US');
     }
 
-    function getLevelByScore(score) {
-      const thresholds = [100, 400, 900, 1600, 2600, 3600, 4600, 5600, 6600, 7600];
-      for (let i = thresholds.length - 1; i >= 0; i--) {
-        if (score >= thresholds[i]) return i + 1;
-      }
-      return score < 100 ? 0 : 1;
-    }
-
     function getLevel(score) {
       if (score < 100) return 0;
-      if (score <= 7600) return getLevelByScore(score);
+      if (score <= 7600) {
+        const thresholds = [100, 400, 900, 1600, 2600, 3600, 4600, 5600, 6600, 7600];
+        for (let i = thresholds.length - 1; i >= 0; i--) {
+          if (score >= thresholds[i]) return i + 1;
+        }
+        return 1;
+      }
       return 10 + Math.floor((score - 7600) / 1000);
     }
 
@@ -133,23 +88,14 @@
     }
 
     let checks = loadChecks();
-    let dataTable;
+    let dataTable = null;
     let rowsData = [];
 
-    if (!window._dt_filter_registered) {
-      $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
-        const row = settings.aoData[dataIndex].nTr;
-        const name = $(row).data('name');
-        const hide = $('#hideCollected').prop('checked');
-        const isCollected = checks[name]?.collected;
-        return !hide || !isCollected;
-      });
-      window._dt_filter_registered = true;
-    }
-
     function applyHideCollected() {
-      dataTable.draw();
-      updateScoreLevelInfo();
+      if (dataTable) {
+        dataTable.draw();
+        updateScoreLevelInfo();
+      }
     }
 
     function updateScoreLevelInfo() {
@@ -169,7 +115,8 @@
       $('#itemsTable tbody').empty();
       checks = loadChecks();
 
-      const apiUrl = 'https://marketplace-core-ll9s.onrender.com/api/marketplace/getList';
+      const proxyUrl = 'https://corsproxy.io/?';
+      const apiUrl = proxyUrl + encodeURIComponent('https://marketplace-core-ll9s.onrender.com/api/marketplace/getList');
 
       $.getJSON(apiUrl, function (data) {
         rowsData = [];
@@ -177,16 +124,13 @@
 
         for (const [name, info] of Object.entries(data)) {
           if (!info || !info.imgUrl) continue;
-
           if (!checks[name]) checks[name] = { collected: false, excluded: false };
 
-          const price = parseFloat(info.price);
           const row = {
             name: name,
-            lowest_price: isNaN(price) ? -1 : price,
+            lowest_price: parseFloat(info.price),
             image_url: info.imgUrl
           };
-
           rowsData.push(row);
 
           const $tr = $(`
@@ -194,7 +138,7 @@
               <td><input type="checkbox" class="collect" data-name="${name}" ${checks[name].collected ? 'checked' : ''}></td>
               <td><input type="checkbox" class="exclude" data-name="${name}" ${checks[name].excluded ? 'checked' : ''}></td>
               <td>${name}</td>
-              <td>${row.lowest_price >= 0 ? formatNumber(row.lowest_price) : 'N/A'}</td>
+              <td>${row.lowest_price >= 0 ? row.lowest_price : 'N/A'}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
           `);
@@ -209,7 +153,9 @@
               targets: 3,
               render: {
                 display: function (data, type, row) {
-                  return row.lowest_price >= 0 ? formatNumber(row.lowest_price) : 'N/A';
+                  return row.lowest_price >= 0
+                    ? $.fn.dataTable.render.number(',', '.', 0).display(row.lowest_price)
+                    : 'N/A';
                 },
                 sort: function (data, type, row) {
                   return row.lowest_price >= 0 ? row.lowest_price : Number.MAX_SAFE_INTEGER;
@@ -230,11 +176,8 @@
         $('#itemsTable').on('change', 'input[type="checkbox"]', function () {
           const name = $(this).data('name');
           if (!checks[name]) checks[name] = { collected: false, excluded: false };
-          if ($(this).hasClass('collect')) {
-            checks[name].collected = this.checked;
-          } else if ($(this).hasClass('exclude')) {
-            checks[name].excluded = this.checked;
-          }
+          if ($(this).hasClass('collect')) checks[name].collected = this.checked;
+          if ($(this).hasClass('exclude')) checks[name].excluded = this.checked;
           saveChecks(checks);
           applyHideCollected();
         });
@@ -247,7 +190,8 @@
     $('#reloadBtn').on('click', loadCSV);
 
     $('#selectPageBtn').on('click', function () {
-      const currentPageRows = dataTable.rows({ page: 'current' }).nodes();
+      const currentPageRows = dataTable?.rows({ page: 'current' }).nodes();
+      if (!currentPageRows) return;
       let changed = false;
       $(currentPageRows).each(function () {
         const $checkbox = $(this).find('input.collect');
@@ -301,11 +245,9 @@
         alert('已全部收藏或排除，無需匯出');
         return;
       }
-      const csvContent = [
-        ['名稱', '最低價格', '圖片網址']
-      ].concat(
-        uncollected.map(row => [row.name, row.lowest_price, row.image_url])
-      ).map(e => e.join(',')).join('\n');
+      const csvContent = [['名稱', '最低價格', '圖片網址']]
+        .concat(uncollected.map(row => [row.name, row.lowest_price, row.image_url]))
+        .map(e => e.join(',')).join('\n');
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement("a");
