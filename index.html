@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
   <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-  <script src="https://cdn.datatables.net/plug-ins/1.13.6/dataRender/number.js"></script>
   <style>
     body{font-family:'Noto Sans TC',sans-serif;margin:2em;background:#f9f9f9;color:#333}
     h2{font-weight:700;margin-bottom:1em;color:#222}
@@ -26,6 +25,7 @@
 <body>
   <h2>楓之谷 N 圖鑑查價</h2>
 
+  <!-- ===== 功能列 ===== -->
   <div class="controls">
     <div class="group">
       <label><input type="checkbox" id="hideCollected"> 只顯示未收藏</label>
@@ -57,15 +57,12 @@
     <tbody></tbody>
   </table>
 
+  <!-- ===== 主程式 ===== -->
   <script>
-    /* ---------- 全域設定 ---------- */
-    const DATA_URL = 'item.json';              // ← 靜態 JSON 檔名
-    let checks     = loadChecks();             // 收藏 / 排除狀態
-    let rowsData   = [];                       // 目前所有項目
-    let dataTable  = null;
-
-    /* ---------- 小工具 ---------- */
+    /* ---------- 基本工具 ---------- */
+    const DATA_URL='item.json';                        // ← JSON 檔路徑
     function formatNumber(n){return n.toLocaleString('en-US');}
+
     function getLevel(score){
       if(score<100) return 0;
       if(score<=7600){
@@ -75,6 +72,8 @@
       }
       return 10+Math.floor((score-7600)/1000);
     }
+
+    /* ---------- LocalStorage ---------- */
     function loadChecks(){
       const raw=JSON.parse(localStorage.getItem('itemChecks')||'{}');
       for(const n in raw) if(typeof raw[n]!=='object')
@@ -83,27 +82,32 @@
     }
     function saveChecks(v){localStorage.setItem('itemChecks',JSON.stringify(v));}
 
-    /* ---------- 主流程：載入 JSON ---------- */
+    /* ---------- 全域變數 ---------- */
+    let checks=loadChecks();
+    let rowsData=[];
+    let dataTable=null;
+
+    /* ---------- 載入 JSON ---------- */
     function loadCSV(){
       if($.fn.DataTable.isDataTable('#itemsTable')) $('#itemsTable').DataTable().destroy();
       $('#itemsTable tbody').empty();
-      checks = loadChecks();
+      checks=loadChecks();
 
       $.getJSON(DATA_URL,data=>{
-        rowsData = [];
-        const $tbody = $('#itemsTable tbody');
+        rowsData=[];
+        const $tbody=$('#itemsTable tbody');
 
         for(const [name,info] of Object.entries(data)){
           if(!info||!info.imgUrl) continue;
           if(!checks[name]) checks[name]={collected:false,excluded:false};
 
-          const price = Number(info.price);
+          const price=Number(info.price);              // 可能是 -1
           rowsData.push({name,lowest_price:price,image_url:info.imgUrl});
 
           $tbody.append(`
             <tr data-name="${name}">
               <td><input type="checkbox" class="collect" data-name="${name}" ${checks[name].collected?'checked':''}></td>
-              <td><input type="checkbox" class="exclude"  data-name="${name}" ${checks[name].excluded?'checked':''}></td>
+              <td><input type="checkbox" class="exclude" data-name="${name}" ${checks[name].excluded?'checked':''}></td>
               <td>${name}</td>
               <td>${price}</td>
               <td><img src="${info.imgUrl}" alt="圖片"></td>
@@ -111,18 +115,22 @@
           `);
         }
 
-        dataTable = $('#itemsTable').DataTable({
+        /* ---------- 初始化 DataTables ---------- */
+        dataTable=$('#itemsTable').DataTable({
           order:[[3,'asc']],
           columnDefs:[
             {orderable:false,targets:[0,1,4]},
             {
-              targets:3, className:'dt-right', type:'num',
+              targets:3,
+              className:'dt-right',
+              type:'num',
               render:{
-                /* ★ 直接用第一參數 data ★ */
-                display:(data)=> (data!==null&&data!==''
-                  ? $.fn.dataTable.render.number(',','.','0').display(data)
+                /* ① 顯示邏輯：負值 → N/A；其餘 → 千分位，沒小數點 */
+                display:(data)=> (data>=0
+                  ? formatNumber(data)
                   : 'N/A'),
-                sort:(data)=> (data!==null&&data!=='' ? Number(data) : Number.MAX_SAFE_INTEGER)
+                /* ② 排序邏輯：負值給最大值，永遠排在最後 */
+                sort:(data)=> (data>=0 ? data : Number.MAX_SAFE_INTEGER)
               }
             }
           ],
@@ -134,7 +142,7 @@
           }
         });
 
-        /* 監聽 checkbox */
+        /* --------- 監聽 Checkbox ---------- */
         $('#itemsTable').on('change','input[type="checkbox"]',function(){
           const name=$(this).data('name');
           if(!checks[name]) checks[name]={collected:false,excluded:false};
@@ -155,7 +163,7 @@
       updateScoreLevelInfo();
     }
 
-    /* ---------- 目前分數 ---------- */
+    /* ---------- 分數顯示 ---------- */
     function updateScoreLevelInfo(){
       let total=0;
       for(const n in checks){
@@ -165,17 +173,17 @@
       $('#scoreLevelInfo').text(`📘 目前分數：${total}（Lv.${getLevel(total)}）`);
     }
 
-    /* ---------- UI 綁定 ---------- */
+    /* ---------- UI 事件 ---------- */
     $('#hideCollected').on('change',applyHideCollected);
-    $('#reloadBtn'   ).on('click',loadCSV);
+    $('#reloadBtn').on('click',loadCSV);
 
     $('#selectPageBtn').on('click',function(){
-      const rows = dataTable?.rows({page:'current'}).nodes();
+      const rows=dataTable?.rows({page:'current'}).nodes();
       if(!rows) return;
       let changed=false;
       $(rows).each(function(){
-        const $cb  = $(this).find('input.collect');
-        const name = $cb.data('name');
+        const $cb=$(this).find('input.collect');
+        const name=$cb.data('name');
         if(!checks[name]?.collected){
           checks[name].collected=true;
           $cb.prop('checked',true);
@@ -202,7 +210,12 @@
       }
       const needItems=Math.ceil(need/100);
       const uncollected=rowsData.filter(r=>!checks[r.name]?.collected&&!checks[r.name]?.excluded);
-      const cheapest=uncollected.sort((a,b)=>a.lowest_price-b.lowest_price).slice(0,needItems);
+      /* 價格 -1 視為無限大，排在最後 */
+      const cheapest=uncollected.sort((a,b)=>{
+        const pa=a.lowest_price>=0?a.lowest_price:Number.MAX_SAFE_INTEGER;
+        const pb=b.lowest_price>=0?b.lowest_price:Number.MAX_SAFE_INTEGER;
+        return pa-pb;
+      }).slice(0,needItems);
       const totalPrice=cheapest.reduce((s,i)=>s+i.lowest_price,0);
       $('#calcResult').text(`⭐ 目標 Lv.${targetLv}，尚需 ${needItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
     });
@@ -222,7 +235,7 @@
       document.body.removeChild(link);
     });
 
-    /* ---------- 初始載入 ---------- */
+    /* ---------- 首次載入 ---------- */
     loadCSV();
   </script>
 </body>
