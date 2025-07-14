@@ -21,10 +21,6 @@
       margin-bottom: 1em;
       color: #222;
     }
-    label {
-      font-size: 1rem;
-      margin-right: 1em;
-    }
     .controls {
       margin-bottom: 1.5em;
       display: flex;
@@ -76,7 +72,7 @@
     </div>
     <div class="group">
       <label>📌 目標分數：</label>
-      <input type="number" id="targetScore" placeholder="100">
+      <input type="number" id="targetScore" placeholder="EX: 3000">
       <button id="calcBtn">計算需要價格</button>
       <button id="exportBtn">⬇️ 匯出未收藏清單（CSV）</button>
       <div class="result" id="calcResult" style="font-weight:bold;margin-left:.5em;"></div>
@@ -118,7 +114,10 @@
       $('#itemsTable tbody').empty();
       checks = loadChecks();
 
-      $.getJSON('https://marketplace-core-ll9s.onrender.com/api/marketplace/getList', function(data) {
+      const proxyUrl = 'https://corsproxy.io/?';
+      const apiUrl = 'https://marketplace-core-ll9s.onrender.com/api/marketplace/getList';
+
+      $.getJSON(proxyUrl + encodeURIComponent(apiUrl), function(data) {
         rowsData = [];
         const tbody = $('#itemsTable tbody');
 
@@ -185,6 +184,7 @@
         $(row).toggle(!hide || !isCollected);
       });
     }
+
     $('#hideCollected').on('change', applyHideCollected);
 
     $('#reloadBtn').on('click', loadCSV);
