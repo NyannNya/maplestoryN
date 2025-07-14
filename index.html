@@ -68,6 +68,13 @@
   </style>
 </head>
 <body>
+
+  <!-- 登入提示區塊 -->
+  <div style="background:#fff3cd; padding:1em; border:1px solid #ffeeba; margin-bottom:1.5em; border-radius:5px;">
+    ⚠️ <strong>首次使用請先完成 API 登入授權</strong><br>
+    👉 點擊 <a href="https://marketplace-core-ll9s.onrender.com/api/marketplace/getList" target="_blank">這裡進行 Cloudflare Access 驗證</a>，登入後再回來本頁即可正常查詢資料。
+  </div>
+
   <h2>楓之谷N 圖鑑查價</h2>
   <div class="controls">
     <div class="group">
@@ -173,10 +180,9 @@
       $('#itemsTable tbody').empty();
       checks = loadChecks();
 
-      const proxyUrl = 'https://corsproxy.io/?';
       const apiUrl = 'https://marketplace-core-ll9s.onrender.com/api/marketplace/getList';
 
-      $.getJSON(proxyUrl + encodeURIComponent(apiUrl), function (data) {
+      $.getJSON(apiUrl, function (data) {
         rowsData = [];
         const tbody = $('#itemsTable tbody');
 
@@ -198,7 +204,7 @@
               <td><input type="checkbox" class="collect" data-name="${name}" ${checks[name].collected ? 'checked' : ''}></td>
               <td><input type="checkbox" class="exclude" data-name="${name}" ${checks[name].excluded ? 'checked' : ''}></td>
               <td>${name}</td>
-              <td>${row.lowest_price}</td>
+              <td>${row.lowest_price >= 0 ? row.lowest_price : 'N/A'}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
           `);
