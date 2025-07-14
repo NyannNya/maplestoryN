@@ -181,7 +181,7 @@
         const tbody = $('#itemsTable tbody');
 
         for (const [name, info] of Object.entries(data)) {
-          if (!info || info.price === -1 || !info.imgUrl) continue;
+          if (!info || !info.imgUrl) continue;
 
           if (!checks[name]) checks[name] = { collected: false, excluded: false };
 
