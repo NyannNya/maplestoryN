@@ -108,17 +108,20 @@
       return n.toLocaleString('en-US');
     }
 
-    // 自定過濾器：根據是否勾選「只顯示未收藏」
-    $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
-      const row = dataTable.row(dataIndex).node();
-      const name = $(row).data('name');
-      const hide = $('#hideCollected').prop('checked');
-      const isCollected = checks[name];
-      return !hide || !isCollected;
-    });
+    // 避免多次註冊
+    if (!window._dt_filter_registered) {
+      $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+        const row = settings.aoData[dataIndex].nTr;
+        const name = $(row).data('name');
+        const hide = $('#hideCollected').prop('checked');
+        const isCollected = checks[name];
+        return !hide || !isCollected;
+      });
+      window._dt_filter_registered = true;
+    }
 
     function applyHideCollected() {
-      dataTable.draw(); // 套用過濾
+      dataTable.draw(); // 套用過濾器
     }
 
     function loadCSV() {
@@ -182,7 +185,7 @@
           const name = $(this).data('name');
           checks[name] = this.checked;
           saveChecks(checks);
-          applyHideCollected(); // 勾選變動時也要套用
+          applyHideCollected();
         });
 
         applyHideCollected();
