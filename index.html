@@ -1,3 +1,4 @@
+<!-- 請儲存為 .html 後打開 -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -61,6 +62,9 @@
       padding: 10px;
       text-align: center;
     }
+    .result {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -76,7 +80,10 @@
       <input type="number" id="targetScore" placeholder="">
       <button id="calcBtn">計算需要價格</button>
       <button id="exportBtn">⬇️ 匯出未收藏清單（CSV）</button>
-      <div class="result" id="calcResult" style="font-weight:bold;margin-left:.5em;"></div>
+      <div id="calcResult" class="result" style="margin-left:.5em;"></div>
+    </div>
+    <div class="group">
+      <div id="scoreLevelInfo" class="result" style="margin-left:0.5em;"></div>
     </div>
   </div>
 
@@ -84,6 +91,7 @@
     <thead>
       <tr>
         <th>收藏</th>
+        <th>排除</th>
         <th>名稱</th>
         <th>最低價格</th>
         <th>圖片</th>
@@ -93,9 +101,35 @@
   </table>
 
   <script>
-    function loadChecks() {
-      return JSON.parse(localStorage.getItem("itemChecks") || "{}");
+    function formatNumber(n) {
+      return n.toLocaleString('en-US');
     }
+
+    function getLevelByScore(score) {
+      const thresholds = [100, 400, 900, 1600, 2600, 3600, 4600, 5600, 6600, 7600];
+      for (let i = thresholds.length - 1; i >= 0; i--) {
+        if (score >= thresholds[i]) return i + 1;
+      }
+      if (score < 100) return 0;
+      return 1;
+    }
+
+    function getLevel(score) {
+      if (score < 100) return 0;
+      if (score <= 7600) return getLevelByScore(score);
+      return 10 + Math.floor((score - 7600) / 1000);
+    }
+
+    function loadChecks() {
+      const raw = JSON.parse(localStorage.getItem("itemChecks") || "{}");
+      for (const name in raw) {
+        if (typeof raw[name] !== 'object') {
+          raw[name] = { collected: !!raw[name], excluded: false };
+        }
+      }
+      return raw;
+    }
+
     function saveChecks(checks) {
       localStorage.setItem("itemChecks", JSON.stringify(checks));
     }
@@ -104,24 +138,32 @@
     let dataTable;
     let rowsData = [];
 
-    function formatNumber(n) {
-      return n.toLocaleString('en-US');
-    }
-
-    // 避免多次註冊
     if (!window._dt_filter_registered) {
       $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
         const row = settings.aoData[dataIndex].nTr;
         const name = $(row).data('name');
         const hide = $('#hideCollected').prop('checked');
-        const isCollected = checks[name];
+        const isCollected = checks[name]?.collected;
         return !hide || !isCollected;
       });
       window._dt_filter_registered = true;
     }
 
     function applyHideCollected() {
-      dataTable.draw(); // 套用過濾器
+      dataTable.draw();
+      updateScoreLevelInfo();
+    }
+
+    function updateScoreLevelInfo() {
+      let totalScore = 0;
+      for (const name in checks) {
+        const c = checks[name];
+        if (c.collected && !c.excluded) {
+          totalScore += 100;
+        }
+      }
+      const level = getLevel(totalScore);
+      $('#scoreLevelInfo').text(`📘 目前分數：${totalScore}（Lv.${level}）`);
     }
 
     function loadCSV() {
@@ -141,20 +183,21 @@
         for (const [name, info] of Object.entries(data)) {
           if (!info || info.price === -1 || !info.imgUrl) continue;
 
+          if (!checks[name]) checks[name] = { collected: false, excluded: false };
+
           const row = {
             name: name,
-            check: checks[name] || false,
             lowest_price: parseFloat(info.price),
             image_url: info.imgUrl
           };
 
           rowsData.push(row);
 
-          const checked = checks[name] ? 'checked' : '';
           const $tr = $(`
-            <tr data-name="${row.name}">
-              <td><input type="checkbox" data-name="${row.name}" ${checked}></td>
-              <td>${row.name}</td>
+            <tr data-name="${name}">
+              <td><input type="checkbox" class="collect" data-name="${name}" ${checks[name].collected ? 'checked' : ''}></td>
+              <td><input type="checkbox" class="exclude" data-name="${name}" ${checks[name].excluded ? 'checked' : ''}></td>
+              <td>${name}</td>
               <td>${row.lowest_price}</td>
               <td><img src="${row.image_url}" alt="圖片"></td>
             </tr>
@@ -163,11 +206,11 @@
         }
 
         dataTable = $('#itemsTable').DataTable({
-          order: [[2, 'asc']],
+          order: [[3, 'asc']],
           columnDefs: [
-            { orderable: false, targets: [0, 3] },
+            { orderable: false, targets: [0, 1, 4] },
             {
-              targets: 2,
+              targets: 3,
               render: $.fn.dataTable.render.number(',', '.', 0),
               className: 'dt-right',
               type: 'num'
@@ -183,7 +226,12 @@
 
         $('#itemsTable').on('change', 'input[type="checkbox"]', function () {
           const name = $(this).data('name');
-          checks[name] = this.checked;
+          if (!checks[name]) checks[name] = { collected: false, excluded: false };
+          if ($(this).hasClass('collect')) {
+            checks[name].collected = this.checked;
+          } else if ($(this).hasClass('exclude')) {
+            checks[name].excluded = this.checked;
+          }
           saveChecks(checks);
           applyHideCollected();
         });
@@ -193,24 +241,20 @@
     }
 
     $('#hideCollected').on('change', applyHideCollected);
-
     $('#reloadBtn').on('click', loadCSV);
 
     $('#selectPageBtn').on('click', function () {
       const currentPageRows = dataTable.rows({ page: 'current' }).nodes();
       let changed = false;
-
       $(currentPageRows).each(function () {
-        const $checkbox = $(this).find('input[type="checkbox"]');
+        const $checkbox = $(this).find('input.collect');
         const name = $checkbox.data('name');
-
-        if (!checks[name]) {
-          checks[name] = true;
+        if (!checks[name]?.collected) {
+          checks[name].collected = true;
           $checkbox.prop('checked', true);
           changed = true;
         }
       });
-
       if (changed) {
         saveChecks(checks);
         applyHideCollected();
@@ -226,37 +270,38 @@
         return;
       }
 
-      const currentScore = Object.values(checks).filter(v => v).length * 100;
+      let currentScore = 0;
+      for (const name in checks) {
+        const item = checks[name];
+        if (item.collected && !item.excluded) currentScore += 100;
+      }
+
       const neededScore = target - currentScore;
+      const targetLevel = getLevel(target);
 
       if (neededScore <= 0) {
-        $('#calcResult').text(`🎉 已達成目標分數 (${currentScore} 分)`);
+        $('#calcResult').text(`🎉 已達成目標分數 Lv.${targetLevel}（${currentScore} 分）`);
         return;
       }
 
       const neededItems = Math.ceil(neededScore / 100);
-      const uncollected = rowsData.filter(r => !checks[r.name]);
+      const uncollected = rowsData.filter(r => !checks[r.name]?.collected && !checks[r.name]?.excluded);
       const cheapest = uncollected.sort((a, b) => a.lowest_price - b.lowest_price).slice(0, neededItems);
       const totalPrice = cheapest.reduce((sum, item) => sum + item.lowest_price, 0);
 
-      $('#calcResult').text(`⭐ 尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
+      $('#calcResult').text(`⭐ 目標 Lv.${targetLevel}，尚需 ${neededItems} 個收藏，共約 ${formatNumber(totalPrice)} NESO`);
     });
 
     $('#exportBtn').on('click', function () {
-      const uncollected = rowsData.filter(r => !checks[r.name]);
+      const uncollected = rowsData.filter(r => !checks[r.name]?.collected && !checks[r.name]?.excluded);
       if (uncollected.length === 0) {
-        alert('已全部收藏，無需匯出');
+        alert('已全部收藏或排除，無需匯出');
         return;
       }
-
       const csvContent = [
         ['名稱', '最低價格', '圖片網址']
       ].concat(
-        uncollected.sort((a, b) => a.lowest_price - b.lowest_price).map(row => [
-          row.name,
-          row.lowest_price,
-          row.image_url
-        ])
+        uncollected.map(row => [row.name, row.lowest_price, row.image_url])
       ).map(e => e.join(',')).join('\n');
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
